@@ -5,3 +5,4 @@
 !get_model.py
 !start-lane.sh
 !README.md
+!ci-local.sh
