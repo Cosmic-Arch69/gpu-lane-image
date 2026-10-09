@@ -9,8 +9,8 @@ pull(){ # url out floor_mb
 R=https://huggingface.co/JonathanColetti/Qwen3.8-27B-Uncensored-GGUF/resolve/main
 pull $R/Qwen3.8-27B-Uncensored-Q4_K_M.gguf $M/model.gguf 10000
 pull $R/mmproj-Qwen3.8-27B-Uncensored-F16.gguf $M/mmproj.gguf 500
-# ponytail: assumes the Yotta Pod launcher runs this image directly; if its init box rejects nested docker run, keep init as: /usr/sbin/sshd -D & /opt/start-lane.sh
+# ponytail: assumes Yotta Pod launcher runs the image directly; if its init box rejects nested docker run, set this image as the pod image and keep init as: /usr/sbin/sshd -D & /opt/start-lane.sh
 exec /opt/llama/llama-server -m $M/model.gguf --mmproj $M/mmproj.gguf \
   --spec-type draft-mtp --spec-draft-n-max "${SPEC_DRAFT_N_MAX:-3}" \
-  -c "${CTX_PER_SLOT:-262144}" -np "${NP:-3}" --kv-unified -ngl "${NGL:-99}" --flash-attn on \
+  -c "${CTX_PER_SLOT:-262144}" -np "${NP:-4}" --kv-unified -ngl "${NGL:-99}" --flash-attn on \
   --jinja --host 127.0.0.1 --port "${PORT:-8000}"
