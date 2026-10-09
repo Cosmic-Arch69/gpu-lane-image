@@ -1,5 +1,9 @@
 # gpu-lane-image
 
+**Status: parked, not used.** A stopped (not terminated) on-demand Yotta VM keeps the llama.cpp build *and* 17.7 GB of weights on its persistent disk, so re-deploy = boot time and zero build. This image only pays for itself on a box with an **ephemeral** disk (spot/pod). Measured fresh-disk rebuild without any image: 29 min, ~$0.40.
+
+The recipe below is also **stale on one point**: it must build `-DBUILD_SHARED_LIBS=OFF` (static). The shared build needs the host CUDA driver at link time, which a GPU-less CI runner does not have — that is what killed three runs.
+
 Docker recipe for the Yotta GPU lane: **JonathanColetti Qwen3.8-27B-Uncensored** (Q4_K_M, native 262k context, built-in MTP head) served by llama.cpp with CUDA.
 
 Built so a fresh GPU box goes from zero to serving in ~3 minutes instead of ~25: the toolchain ships in the image, only the weights are pulled at boot.

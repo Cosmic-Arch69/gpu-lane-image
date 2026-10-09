@@ -1,78 +1,25 @@
 name: build-lane-image
-on:
-  workflow_dispatch:
-    inputs:
-      llama_rev:
-        description: "llama.cpp revision to compile"
-        default: "8e2d31e"
-        required: true
-      tag:
-        description: "image tag"
-        default: "jonathan"
-        required: true
-
+on: workflow_dispatch
+# Static build, no CUDA driver at link time -> one file in the image, no .so wrangling.
+# Image must be PUBLIC (Yotta pulls anonymous; private ghcr needs a PAT in the console).
 jobs:
   bake:
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
+    permissions: { contents: read, packages: write }
     steps:
       - uses: actions/checkout@v4
-
-      - name: Compile llama-server for CUDA 12.8 / linux-amd64
+      - name: Compile
         run: |
-          set -euo pipefail
-          # Pull from NVIDIA's own registry: Docker Hub rate-limits anonymous
-          # pulls on shared CI runners (toomanyrequests). Same image, no auth.
-          docker run --rm \
-            -v "$PWD:/w" -w /w \
-            -e REV="${{ inputs.llama_rev }}" \
-            nvcr.io/nvidia/cuda:12.8.1-devel-ubuntu22.04 bash -c '
-              set -euo pipefail
-              export DEBIAN_FRONTEND=noninteractive
-              apt-get update -qq
-              apt-get install -y -qq --no-install-recommends git cmake ninja-build libgomp1 ca-certificates
-              cmake --version | head -1
-              git clone --depth 50 https://github.com/ggml-org/llama.cpp /src
-              git -C /src checkout "$REV"
-              git -C /src log -1 --format="built %h %s"
-              cmake -S /src -B /b -G Ninja \
-                -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DBUILD_SHARED_LIBS=BUILD \
-                -DCMAKE_CUDA_ARCHITECTURES=86 \
-                -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
-                -DCMAKE_EXE_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs -Wl,--allow-shlib-undefined" \
-                -DCMAKE_SHARED_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs -Wl,-rpath-link,/usr/local/cuda/lib64/stubs" \
-                -DLLAMA_CURL=OFF
-              cmake --build /b --target llama-server -j "$(nproc)"
-              mkdir -p /w/build-out/bin /w/build-out/lib
-              cp -av /b/bin/llama-server /w/build-out/bin/
-              find /b -name "*.so*" -maxdepth 3 -exec cp -av {} /w/build-out/lib/ \;
-              # libcuda.so.1 normally arrives from the HOST driver at runtime. Ship the
-              # NVIDIA stub too: it satisfies the loader when nothing is mounted (our
-              # no-GPU smoke test) and the real driver takes precedence on a GPU pod.
-              ls /usr/local/cuda/lib64/stubs/
-              cp -av /usr/local/cuda/lib64/stubs/libcuda.so /w/build-out/lib/libcuda.so.1
-              ls -la /w/build-out/bin /w/build-out/lib
-              ldd /w/build-out/bin/llama-server | grep -i cuda
-            '
-
-      - name: Smoke-test the binary in the runtime base
-        run: |
-          set -euo pipefail
-          docker run --rm -v "$PWD/build-out:/o:ro" \
-            -e LD_LIBRARY_PATH=/o/lib nvcr.io/nvidia/cuda:12.8.1-runtime-ubuntu22.04 \
-            bash -c 'apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends libgomp1 >/dev/null; /o/bin/llama-server --version; /o/bin/llama-server --help | grep -E "spec-type|spec-draft-n-max" | head -4'
-
-      - name: Build the lane image
-        run: docker build --platform linux/amd64 -t lane:${{ inputs.tag }} .
-
-      - name: Push to GHCR
-        run: |
-          set -euo pipefail
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u USERNAME --password-stdin
-          LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          docker tag lane:${{ inputs.tag }} "ghcr.io/$LOWER/qwen-lane:${{ inputs.tag }}"
-          docker push "ghcr.io/$LOWER/qwen-lane:${{ inputs.tag }}"
-          docker image inspect "ghcr.io/$LOWER/qwen-lane:${{ inputs.tag }}" \
-            --format 'image size: {{.Size}} bytes'
+          docker run --rm -v "$PWD:/w" -w /w nvidia/cuda:12.8.1-devel-ubuntu22.04 bash -c '
+            set -euo pipefail
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends cmake ninja-build git libgomp1
+            git clone --depth 1 https://github.com/ggml-org/llama.cpp /src
+            git -C /src checkout 8e2d31e
+            cmake -S /src -B /b -G Ninja -DGGML_CUDA=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_CUDA_ARCHITECTURES=86
+            cmake --build /b --target llama-server -j3
+            cp /b/bin/llama-server /w/'
+      - run: docker build -t lane .
+      - run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u x --password-stdin
+        env: GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: docker tag lane ghcr.io/cosmic-arch69/qwen-lane:jonathan && docker push ghcr.io/cosmic-arch69/qwen-lane:jonathan
