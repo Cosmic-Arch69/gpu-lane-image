@@ -23,10 +23,12 @@ jobs:
       - name: Compile llama-server for CUDA 12.8 / linux-amd64
         run: |
           set -euo pipefail
+          # Pull from NVIDIA's own registry: Docker Hub rate-limits anonymous
+          # pulls on shared CI runners (toomanyrequests). Same image, no auth.
           docker run --rm \
             -v "$PWD:/w" -w /w \
             -e REV="${{ inputs.llama_rev }}" \
-            nvidia/cuda:12.8.1-devel-ubuntu22.04 bash -c '
+            nvcr.io/nvidia/cuda:12.8.1-devel-ubuntu22.04 bash -c '
               set -euo pipefail
               export DEBIAN_FRONTEND=noninteractive
               apt-get update -qq
@@ -52,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD/build-out:/o:ro" \
-            -e LD_LIBRARY_PATH=/o/lib nvidia/cuda:12.8.1-runtime-ubuntu22.04 \
+            -e LD_LIBRARY_PATH=/o/lib nvcr.io/nvidia/cuda:12.8.1-runtime-ubuntu22.04 \
             bash -c 'apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends libgomp1 >/dev/null; /o/bin/llama-server --version; /o/bin/llama-server --help | grep -E "spec-type|spec-draft-n-max" | head -4'
 
       - name: Build the lane image

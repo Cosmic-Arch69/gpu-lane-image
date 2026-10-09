@@ -6,7 +6,7 @@
 # .github/workflows/build-image.yml, which compiles inside
 # nvidia/cuda:12.8.1-devel-ubuntu22.04 on a free GitHub runner and writes them
 # to ./build-out/. Models are NOT in the image — boot pulls ~17.7 GB from HuggingFace.
-FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
+FROM nvcr.io/nvidia/cuda:12.8.1-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
