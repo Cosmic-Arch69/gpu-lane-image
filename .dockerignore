@@ -1,0 +1,7 @@
+# Keep the build context tiny: the image needs exactly four things, build-out plus the three lane files.
+*
+!build-out
+!Dockerfile
+!get_model.py
+!start-lane.sh
+!README.md

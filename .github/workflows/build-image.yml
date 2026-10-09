@@ -1,0 +1,69 @@
+name: build-lane-image
+on:
+  workflow_dispatch:
+    inputs:
+      llama_rev:
+        description: "llama.cpp revision to compile"
+        default: "8e2d31e"
+        required: true
+      tag:
+        description: "image tag"
+        default: "jonathan"
+        required: true
+
+jobs:
+  bake:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile llama-server for CUDA 12.8 / linux-amd64
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/w" -w /w \
+            -e REV="${{ inputs.llama_rev }}" \
+            nvidia/cuda:12.8.1-devel-ubuntu22.04 bash -c '
+              set -euo pipefail
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends git cmake ninja-build libgomp1 ca-certificates
+              cmake --version | head -1
+              git clone --depth 50 https://github.com/ggml-org/llama.cpp /src
+              git -C /src checkout "$REV"
+              git -C /src log -1 --format="built %h %s"
+              cmake -S /src -B /b -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DBUILD_SHARED_LIBS=BUILD \
+                -DCMAKE_CUDA_ARCHITECTURES=86 \
+                -DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc \
+                -DLLAMA_CURL=OFF
+              cmake --build /b --target llama-server -j "$(nproc)"
+              mkdir -p /w/build-out/bin /w/build-out/lib
+              cp -av /b/bin/llama-server /w/build-out/bin/
+              find /b -name "*.so*" -maxdepth 3 -exec cp -av {} /w/build-out/lib/ \;
+              ls -la /w/build-out/bin /w/build-out/lib
+              ldd /w/build-out/bin/llama-server | grep -i cuda
+            '
+
+      - name: Smoke-test the binary in the runtime base
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD/build-out:/o:ro" \
+            -e LD_LIBRARY_PATH=/o/lib nvidia/cuda:12.8.1-runtime-ubuntu22.04 \
+            bash -c 'apt-get update -qq >/dev/null && apt-get install -y -qq --no-install-recommends libgomp1 >/dev/null; /o/bin/llama-server --version; /o/bin/llama-server --help | grep -E "spec-type|spec-draft-n-max" | head -4'
+
+      - name: Build the lane image
+        run: docker build --platform linux/amd64 -t lane:${{ inputs.tag }} .
+
+      - name: Push to GHCR
+        run: |
+          set -euo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u USERNAME --password-stdin
+          LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          docker tag lane:${{ inputs.tag }} "ghcr.io/$LOWER/qwen-lane:${{ inputs.tag }}"
+          docker push "ghcr.io/$LOWER/qwen-lane:${{ inputs.tag }}"
+          docker image inspect "ghcr.io/$LOWER/qwen-lane:${{ inputs.tag }}" \
+            --format 'image size: {{.Size}} bytes'
