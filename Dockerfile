@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY build-out/bin/    /opt/llama/bin/
 COPY build-out/lib/    /opt/llama/lib/
+# Placeholder only: the nvidia container runtime bind-mounts the real driver
+# libcuda.so.1 over this path on a GPU pod.
+COPY build-out/lib/libcuda.so.1 /usr/lib/x86_64-linux-gnu/libcuda.so.1
 COPY get_model.py      /opt/get_model.py
 COPY start-lane.sh     /opt/start-lane.sh
 RUN chmod +x /opt/start-lane.sh /opt/get_model.py /opt/llama/bin/llama-server
