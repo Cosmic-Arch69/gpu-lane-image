@@ -1,1 +1,9 @@
+# build context = the compiled binary + CUDA runtime libs + the lane script, nothing else
+*
+!llama-server
+!libcudart.so.12
+!libcublas.so.12
+!libcublasLt.so.12
+!start-lane.sh
 !Dockerfile
+!jonathan

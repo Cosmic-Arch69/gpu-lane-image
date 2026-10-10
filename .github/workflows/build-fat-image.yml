@@ -33,6 +33,7 @@ jobs:
           echo "$cuobjdump_out" | grep -q sm_86 || { echo "MISSING sm_86 - A6000 would not run"; exit 1; }
       - name: Runtime smoke test (no GPU: must load, then fail cleanly on device query)
         run: |
+          cp jonathan/lib*.so* . 2>/dev/null || { echo "missing CUDA runtime libs in jonathan/"; exit 1; }
           docker build -t lane .
           docker run --rm lane /opt/llama/llama-server --version | tail -2
       - run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u x --password-stdin
