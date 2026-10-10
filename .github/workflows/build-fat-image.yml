@@ -1,14 +1,18 @@
 name: build-fat-image
-on: workflow_dispatch
-# A6000 = sm_86, A100 = sm_80. SASS is NOT backward compatible, so the binary must
-# carry both. Static build (BUILD_SHARED_LIBS=OFF) needs no CUDA driver at link time,
-# which is what killed the shared-lib attempts on a GPU-less runner.
+on:
+  workflow_dispatch: {}
+
+# A6000 = sm_86, A100 = sm_80. SASS is NOT backward compatible, so the binary
+# must carry both. Static build needs no CUDA driver at link time.
 jobs:
   bake:
     runs-on: ubuntu-24.04
-    permissions: { contents: read, packages: write }
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
+
       - name: Compile sm_80 + sm_86
         run: |
           docker run --rm -v "$PWD:/w" -w /w nvcr.io/nvidia/cuda:12.8.1-devel-ubuntu22.04 bash -c '
@@ -17,25 +21,29 @@ jobs:
             apt-get install -y -qq --no-install-recommends cmake ninja-build git libgomp1
             git clone --depth 50 https://github.com/ggml-org/llama.cpp /src
             git -C /src checkout 8e2d31e
-            cmake -S /src -B /b -G Ninja -DCMAKE_BUILD_TYPE=Release \
-              -DGGML_CUDA=ON -DBUILD_SHARED_LIBS=OFF \
-              -DCMAKE_CUDA_ARCHITECTURES="80;86" \
-              -DLLAMA_CURL=OFF
+            cmake -S /src -B /b -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_CUDA_ARCHITECTURES="80;86" -DLLAMA_CURL=OFF
             cmake --build /b --target llama-server -j3
             cp /b/bin/llama-server /w/llama-server
             ls -l /w/llama-server'
-      - name: Verify both architectures are in the binary
+
+      - name: Verify both architectures are present
         run: |
-          cuobjdump_out=$(docker run --rm -v "$PWD:/w" -w /w nvcr.io/nvidia/cuda:12.8.1-devel-ubuntu22.04 \
+          ARCH=$(docker run --rm -v "$PWD:/w" -w /w nvcr.io/nvidia/cuda:12.8.1-devel-ubuntu22.04 \
             bash -c 'cuobjdump -lelf /w/llama-server 2>/dev/null | grep -oE "sm_[0-9]+" | sort -u | tr "\n" " "')
-          echo "arch in binary: $cuobjdump_out"
-          echo "$cuobjdump_out" | grep -q sm_80 || { echo "MISSING sm_80 - A100 would not run"; exit 1; }
-          echo "$cuobjdump_out" | grep -q sm_86 || { echo "MISSING sm_86 - A6000 would not run"; exit 1; }
-      - name: Runtime smoke test (no GPU: must load, then fail cleanly on device query)
+          echo "arch in binary: $ARCH"
+          echo "$ARCH" | grep -q sm_80 || { echo "MISSING sm_80 - A100 would not run"; exit 1; }
+          echo "$ARCH" | grep -q sm_86 || { echo "MISSING sm_86 - A6000 would not run"; exit 1; }
+
+      - name: Build and smoke-test the image
         run: |
-          cp jonathan/lib*.so* . 2>/dev/null || { echo "missing CUDA runtime libs in jonathan/"; exit 1; }
+          cp jonathan/libcudart.so.12 jonathan/libcublas.so.12 jonathan/libcublasLt.so.12 .
           docker build -t lane .
           docker run --rm lane /opt/llama/llama-server --version | tail -2
-      - run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u x --password-stdin
-        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
-      - run: docker tag lane ghcr.io/cosmic-arch69/qwen-lane:fat && docker push ghcr.io/cosmic-arch69/qwen-lane:fat
+
+      - name: Push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u x --password-stdin
+          docker tag lane ghcr.io/cosmic-arch69/qwen-lane:fat
+          docker push ghcr.io/cosmic-arch69/qwen-lane:fat
