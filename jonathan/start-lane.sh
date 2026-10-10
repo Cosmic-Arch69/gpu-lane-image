@@ -1,6 +1,7 @@
 #!/bin/bash
 # Boot-time lane: pull weights (skips if already on disk), then serve.
 set -e
+export LD_LIBRARY_PATH=/opt/llama:${LD_LIBRARY_PATH:-}
 M=/models; mkdir -p $M
 pull(){ # url out floor_mb
   [ -s "$2" ] && [ "$(stat -c%s "$2")" -gt $(( $3 * 1000000 )) ] && { echo "$(basename $2): present"; return 0; }
