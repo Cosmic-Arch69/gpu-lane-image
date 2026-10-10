@@ -28,8 +28,10 @@ jobs:
 
       - name: Verify both architectures are present
         run: |
+          docker run --rm -v "$PWD:/w" -w /w nvcr.io/nvidia/cuda:12.8.1-devel-ubuntu22.04 \
+            bash -c 'which cuobjdump; cuobjdump --list-elf /w/llama-server | head -20'
           ARCH=$(docker run --rm -v "$PWD:/w" -w /w nvcr.io/nvidia/cuda:12.8.1-devel-ubuntu22.04 \
-            bash -c 'cuobjdump -lelf /w/llama-server 2>/dev/null | grep -oE "sm_[0-9]+" | sort -u | tr "\n" " "')
+            bash -c 'cuobjdump --list-elf /w/llama-server | grep -oE "sm_[0-9]+" | sort -u | tr "\n" " "')
           echo "arch in binary: $ARCH"
           echo "$ARCH" | grep -q sm_80 || { echo "MISSING sm_80 - A100 would not run"; exit 1; }
           echo "$ARCH" | grep -q sm_86 || { echo "MISSING sm_86 - A6000 would not run"; exit 1; }
